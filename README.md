@@ -61,7 +61,7 @@ sphere, the centered cylinder, the rotated cube, and the fractal tree — from
 multiple distinct angles and distances, ending on a wide shot with all four
 visible together.
 
-Video link: https://github.com/ChrisLuciano2/CST310-Project9-AdvancedShaders1/blob/main/docs/Project9_navigation.mp4
+Video link: https://github.com/ChrisLuciano2/CST310-Project9-AdvancedShaders1/blob/9f0aa0938f4ce6705814dcf81d582fef4c9adb80/docs/Project9_navigation.mp4
 
 ## Build & run
 
