@@ -1,0 +1,7 @@
+build/
+external/glad/
+*.user
+.vs/
+.vscode/
+.idea/
+*.dSYM/

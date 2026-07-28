@@ -1,0 +1,23 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 20, "patch": 0 },
+  "configurePresets": [
+    { "name": "mac-arm64", "displayName": "macOS · Apple Silicon",
+      "generator": "Unix Makefiles", "binaryDir": "${sourceDir}/build/mac-arm64",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "CMAKE_OSX_ARCHITECTURES": "arm64", "CMAKE_PREFIX_PATH": "/opt/homebrew" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" } },
+    { "name": "win-dgpu", "displayName": "Windows · Dedicated GPU",
+      "generator": "Visual Studio 17 2022", "architecture": "x64", "binaryDir": "${sourceDir}/build/win-dgpu",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake", "VCPKG_TARGET_TRIPLET": "x64-windows" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" } },
+    { "name": "win-igpu", "displayName": "Windows · Integrated GPU",
+      "generator": "Visual Studio 17 2022", "architecture": "x64", "binaryDir": "${sourceDir}/build/win-igpu",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake", "VCPKG_TARGET_TRIPLET": "x64-windows", "CST310_TARGET_GPU": "integrated" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" } }
+  ],
+  "buildPresets": [
+    { "name": "mac-arm64", "configurePreset": "mac-arm64", "configuration": "Release" },
+    { "name": "win-dgpu",  "configurePreset": "win-dgpu",  "configuration": "Release" },
+    { "name": "win-igpu",  "configurePreset": "win-igpu",  "configuration": "Release" }
+  ]
+}

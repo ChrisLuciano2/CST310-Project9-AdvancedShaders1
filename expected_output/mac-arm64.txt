@@ -1,0 +1,5 @@
+REFERENCE_PENDING · mac-arm64
+
+Expected output for project topic_09_checkerboard_scene on mac-arm64.
+See the project README.md for the canonical description.
+PNG capture pending first clean-machine build.

@@ -1,0 +1,5 @@
+REFERENCE_PENDING · win-igpu
+
+Expected output for project topic_09_checkerboard_scene on win-igpu.
+See the project README.md for the canonical description.
+PNG capture pending first clean-machine build.
