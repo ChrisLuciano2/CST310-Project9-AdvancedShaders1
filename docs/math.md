@@ -62,31 +62,101 @@ Six constant face normals plus a per-face UV square is the standard technique
 for a "flat-shaded, correctly-mapped" cube, at the cost of not sharing
 vertices between adjacent faces (24 vertices instead of 8).
 
-## Fly-through camera
+## Keyboard camera (position + yaw/pitch/roll)
 
-The camera stores position `g_pos` and two angles, `yaw` and `pitch`, updated
-by mouse-drag (`yaw += dx * 0.004`, `pitch -= dy * 0.004`, clamped to
-`[-1.4, 1.4]` radians so the camera can't flip over the pole). Every frame,
-the forward and right vectors are derived from those two angles:
+The camera stores a position `g_pos` and three Euler angles in degrees —
+`yaw`, `pitch`, `roll` — updated only by discrete keyboard events (`key_cb`
+in `main.cpp`), matching the Project 9 Resource Guide's control table
+exactly: plain arrow keys slide `g_pos` by 1 unit along a world axis,
+Shift+Up/Down slide along Z, Ctrl+arrows change yaw/pitch by 2°, `,`/`.`
+change roll by 2°, and `r` resets all of it to the startup defaults. There is
+no per-frame polling or mouse input — every change is a fixed step applied
+once per key event, so movement speed is entirely a function of how many
+times a key is pressed (or auto-repeated by the OS), not frame time.
 
-```
-forward = (cos(pitch) * sin(yaw), sin(pitch), cos(pitch) * cos(yaw))
-right   = normalize(cross(forward, (0,1,0)))
-```
-
-This is the standard spherical-to-Cartesian yaw/pitch camera: `yaw` rotates
-the look direction around the world Y axis, and `pitch` tilts it up/down
-within the vertical plane containing that direction; `cos(pitch)` scales the
-X/Z contribution down as the camera looks more toward the poles, which is
-what keeps `forward` a unit vector. WASD/arrow keys move `g_pos` along
-`forward`/`right` scaled by `4 units/sec * dt`, so movement speed is
-frame-rate-independent. The view matrix is then:
+Every frame, the current yaw/pitch/roll are turned into a rotation matrix and
+applied to the default look direction and up vector:
 
 ```
-view = lookAt(g_pos, g_pos + forward, (0,1,0))
+R = Ry(yaw) * Rx(pitch) * Rz(roll)      (roll applied first, in local space,
+                                          then pitch, then yaw — see below)
+forward = R * (0, 0, -1)
+up      = R * (0, 1,  0)
+```
+
+Order matters: building `R` as `Ry * Rx * Rz` and multiplying it onto a
+column vector applies `Rz` (roll) first, then `Rx` (pitch), then `Ry` (yaw) —
+so roll tilts the camera *before* pitch/yaw reorient the whole thing, which
+is what keeps roll acting like "tilt your head" rather than rolling around a
+world-space axis that drifts as you turn. Passing the *rotated* `up` vector
+(not the world up) into `lookAt` is specifically what makes roll visible: a
+view matrix's up vector defines which way is "top of screen," so rotating it
+is the whole effect. The view matrix is then:
+
+```
+view = lookAt(g_pos, g_pos + forward, up)
 proj = perspective(radians(60), aspect, 0.1, 100)
 MVP  = proj * view * model     (model is per-object: translate * rotate * scale)
 ```
+
+## Basic shaders
+
+All three techniques below run inside one shared fragment shader
+(`scene.frag`), selected per draw call by an integer `uShaderMode` uniform,
+rather than four separate shader programs — a single "uber-shader" with a
+mode branch is simpler to manage for this small a set of effects.
+
+### Sphere — Fresnel rim
+
+```
+diff = max(dot(N, L), 0)
+fres = (1 - max(dot(N, V), 0)) ^ 3
+color = mix(base * (0.18 + 0.82*diff), white, fres * 0.55)
+```
+
+`V` is the normalized vector from the surface point to the camera
+(`normalize(eyePos - worldPos)`). `dot(N, V)` is near 1 where the surface
+faces the camera directly and near 0 at the silhouette edge (grazing
+angles), so `1 - dot(N,V)` is small head-on and large at the rim; raising it
+to a power sharpens that falloff into a narrow bright band right at the
+silhouette. This is the classic Fresnel-effect approximation (real Fresnel
+reflectance is more involved) and is a common cheap stand-in for "this
+surface is reflective" before implementing real environment mapping.
+
+### Cylinder — procedural bump mapping
+
+```
+h(v)  = sin(v * 40) * 0.05                       (procedural "height map")
+dh/dv = cos(v * 40) * 40 * 0.05                   (its exact derivative)
+T = normalize(dFdx(worldPos))                     (screen-space tangent)
+B = normalize(cross(N, T));  T = normalize(cross(B, N))
+N' = normalize(N - B * (dh/dv) * strength)
+diff = max(dot(N', L), 0)
+```
+
+Rather than take a screen-space finite difference of the height value itself
+(`dFdx(h)`/`dFdy(h)`), which shrinks toward zero as a surface covers more
+screen pixels and was empirically invisible in an earlier version of this
+shader (see `docs/../Topic9_LabQuestions/Topic9_LabQ3_BumpMapping.docx` for
+the side-by-side proof), this uses the height field's closed-form derivative
+with respect to `v` and a tunable `strength` constant, keeping the ridge
+effect's visible strength independent of camera distance.
+
+### Cube — procedural panel pattern
+
+```
+g = abs(fract(uv * 4 - 0.5) - 0.5)
+seam = smoothstep(0, 0.05, min(g.x, g.y))
+color = mix(base * 0.55, base, seam) * (0.18 + 0.82 * diff)
+```
+
+`fract(uv*4 - 0.5) - 0.5` repeats a sawtooth four times across each face,
+centered so its zero-crossings fall at even panel boundaries; taking the
+absolute value and the minimum of the two axes finds how close a fragment is
+to *either* a horizontal or vertical seam line, and `smoothstep` turns that
+distance into a soft 0→1 mask. The result darkens narrow bands at regular UV
+intervals, reading as routed panel seams — inexpensive surface structure
+ahead of true parallax (height-map-driven UV displacement) mapping.
 
 ## Fractal tree (background prop)
 

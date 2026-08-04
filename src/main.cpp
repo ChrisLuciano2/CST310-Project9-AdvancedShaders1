@@ -1,24 +1,23 @@
 // =============================================================================
-// CST-310 · Topic 9 · topic_09_checkerboard_scene
+// CST-310 · Project 9 (Advanced Shaders 1)
 //
 // What this shows
 // ---------------
-//   The starting frame of Project 9 (Advanced Shaders 1):
-//
 //     - A checkerboard ground plane
-//     - A sphere
-//     - A cylinder
-//     - A cube
-//     - A fly-through camera (arrow keys + mouse-look)
+//     - A sphere with a basic Fresnel-rim shader
+//     - A cylinder with a basic procedural bump-mapping shader
+//     - A cube with a basic procedural panel-pattern shader
+//     - A fractal-tree background prop
+//     - A camera driven entirely by discrete keyboard events, matching the
+//       Project 9 Resource Guide's control scheme exactly (see key_cb below)
 //
-//   Lighting is simple Lambert + ambient; shaders are placeholders. Project
-//   10 (Advanced Shaders 2) replaces those placeholder shaders with
-//   environment mapping (on the sphere), parallax mapping (on the cube),
-//   and bump mapping (on the cylinder).
-//
-//   Treat this as Project 9's starting point: students extend it to meet
-//   the documentation and quality requirements; Project 10 adds the
-//   advanced shaders.
+//   Each object's shader is a lightweight version of the technique Project
+//   10 (Advanced Shaders 2) will implement in full: the sphere's Fresnel rim
+//   is a cheap stand-in for real environment/cube-map reflection, the
+//   cylinder's procedural ridges are genuine bump mapping (already using the
+//   analytic-derivative technique Project 10 would refine further), and the
+//   cube's panel pattern hints at surface relief ahead of true parallax
+//   (height-map UV displacement) mapping.
 // =============================================================================
 
 #include <glad/gl.h>
@@ -38,11 +37,15 @@ static const int   WH = 800;
 static const char* TITLE = "CST-310 · Topic 9 · Checkerboard Scene (Project 9 starter)";
 
 // -----------------------------------------------------------------------------
-// Camera state — free fly through the scene.
+// Camera state — position plus yaw/pitch/roll (degrees), driven entirely by
+// discrete key events (Resource Guide's keyboard scheme), not continuous
+// polling or mouse-look. yaw=pitch=roll=0 faces -Z, matching the scene's
+// object layout (all objects sit at negative Z ahead of the camera).
 // -----------------------------------------------------------------------------
-static glm::vec3 g_pos(0.0f, 1.5f, 6.0f);
-static float g_yaw = 3.14f, g_pitch = -0.2f;
-static double g_lastX, g_lastY; static bool g_drag = false;
+static const glm::vec3 DEFAULT_POS(0.0f, 1.5f, 6.0f);
+static const float DEFAULT_YAW = 0.0f, DEFAULT_PITCH = 0.0f, DEFAULT_ROLL = 0.0f;
+static glm::vec3 g_pos = DEFAULT_POS;
+static float g_yaw = DEFAULT_YAW, g_pitch = DEFAULT_PITCH, g_roll = DEFAULT_ROLL;
 
 // -----------------------------------------------------------------------------
 // Mesh helpers — build a checkerboard plane, sphere, cylinder, cube once at
@@ -213,9 +216,49 @@ static std::string read_file(const std::string& p){ std::ifstream f(p); std::str
 static GLuint compile(GLenum k,const std::string& src){ GLuint id=glCreateShader(k); const char* c=src.c_str(); glShaderSource(id,1,&c,nullptr); glCompileShader(id); GLint ok; glGetShaderiv(id,GL_COMPILE_STATUS,&ok); if(!ok){char L[2048]; glGetShaderInfoLog(id,2048,nullptr,L); std::cerr<<L<<"\n"; return 0;} return id; }
 static GLuint link_prog(GLuint a,GLuint b){ GLuint p=glCreateProgram(); glAttachShader(p,a); glAttachShader(p,b); glLinkProgram(p); GLint ok; glGetProgramiv(p,GL_LINK_STATUS,&ok); if(!ok){char L[2048]; glGetProgramInfoLog(p,2048,nullptr,L); std::cerr<<L<<"\n"; return 0;} return p; }
 static void fb_cb(GLFWwindow*,int w,int h){ glViewport(0,0,w,h); }
-static void mb_cb(GLFWwindow* w,int b,int act,int){ if(b==GLFW_MOUSE_BUTTON_LEFT){ g_drag=(act==GLFW_PRESS); if(g_drag) glfwGetCursorPos(w,&g_lastX,&g_lastY);}}
-static void cur_cb(GLFWwindow*,double x,double y){ if(!g_drag) return; double dx=x-g_lastX, dy=y-g_lastY; g_lastX=x; g_lastY=y; g_yaw+=static_cast<float>(dx)*0.004f; g_pitch-=static_cast<float>(dy)*0.004f; if(g_pitch>1.4f) g_pitch=1.4f; if(g_pitch<-1.4f) g_pitch=-1.4f; }
-static void key_cb(GLFWwindow* w,int k,int,int act,int){ if(act==GLFW_PRESS && k==GLFW_KEY_ESCAPE) glfwSetWindowShouldClose(w, GL_TRUE); }
+
+// -----------------------------------------------------------------------------
+// Camera control — implements the Project 9 Resource Guide's keyboard table
+// exactly. Arrow keys mean three different things depending on the modifier
+// held (plain = X/Y slide, Shift = Z slide, Ctrl = pitch/yaw), so the plain
+// arrow keys and their modifiers have to be disambiguated in one callback
+// rather than polled independently. GLFW_REPEAT is handled the same as
+// GLFW_PRESS so holding a key keeps applying the same discrete step via the
+// OS's own key-repeat timing, without needing a separate per-frame poll.
+// -----------------------------------------------------------------------------
+static void key_cb(GLFWwindow* w, int key, int, int action, int mods) {
+    if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
+    bool shift = (mods & GLFW_MOD_SHIFT) != 0;
+    bool ctrl  = (mods & GLFW_MOD_CONTROL) != 0;
+
+    if (key == GLFW_KEY_ESCAPE) { glfwSetWindowShouldClose(w, GLFW_TRUE); return; }
+    if (key == GLFW_KEY_R) { g_pos = DEFAULT_POS; g_yaw = DEFAULT_YAW; g_pitch = DEFAULT_PITCH; g_roll = DEFAULT_ROLL; return; }
+    if (key == GLFW_KEY_COMMA)  { g_roll += 2.0f; return; } // '<' — change camera roll by 2 degrees
+    if (key == GLFW_KEY_PERIOD) { g_roll -= 2.0f; return; } // '>' — change camera roll by -2 degrees
+
+    if (key == GLFW_KEY_RIGHT) {
+        if (ctrl) g_yaw += 2.0f;              // Control Right Arrow: yaw += 2 deg
+        else if (!shift) g_pos.x += 1.0f;     // Right Arrow: slide +X
+        return;
+    }
+    if (key == GLFW_KEY_LEFT) {
+        if (ctrl) g_yaw -= 2.0f;              // Control Left Arrow: yaw -= 2 deg
+        else if (!shift) g_pos.x -= 1.0f;     // Left Arrow: slide -X
+        return;
+    }
+    if (key == GLFW_KEY_UP) {
+        if (ctrl) g_pitch -= 2.0f;            // Control Up Arrow: pitch -= 2 deg
+        else if (shift) g_pos.z += 1.0f;      // Shift Up Arrow: slide +Z ("in")
+        else g_pos.y += 1.0f;                 // Up Arrow: slide +Y
+        return;
+    }
+    if (key == GLFW_KEY_DOWN) {
+        if (ctrl) g_pitch += 2.0f;            // Control Down Arrow: pitch += 2 deg
+        else if (shift) g_pos.z -= 1.0f;      // Shift Down Arrow: slide -Z ("out")
+        else g_pos.y -= 1.0f;                 // Down Arrow: slide -Y
+        return;
+    }
+}
 
 int main(){
     if(!glfwInit()){ return 1; }
@@ -229,13 +272,11 @@ int main(){
     glfwMakeContextCurrent(win);
     glfwSetFramebufferSizeCallback(win, fb_cb);
     glfwSetKeyCallback(win, key_cb);
-    glfwSetMouseButtonCallback(win, mb_cb);
-    glfwSetCursorPosCallback(win, cur_cb);
     glfwSwapInterval(1);
 
     if(!gladLoadGL((GLADloadfunc)glfwGetProcAddress)){ return 1; }
     std::cout<<"OpenGL "<<glGetString(GL_VERSION)<<"\nGPU:    "<<glGetString(GL_RENDERER)<<"\n";
-    std::cout<<"WASD = move, arrows = move, left-drag = look, Esc = close\n";
+    std::cout<<"Arrows=slide X/Y  Shift+Up/Down=slide Z  Ctrl+Arrows=pitch/yaw  ,/.=roll  r=reset  Esc=close\n";
 
     int fbw,fbh; glfwGetFramebufferSize(win,&fbw,&fbh); glViewport(0,0,fbw,fbh);
     glEnable(GL_DEPTH_TEST);
@@ -248,12 +289,13 @@ int main(){
     glDeleteShader(v); glDeleteShader(f);
     if(!prog){ glfwTerminate(); return 1; }
 
-    GLint loc_mvp = glGetUniformLocation(prog, "uMVP");
-    GLint loc_m   = glGetUniformLocation(prog, "uModel");
-    GLint loc_nm  = glGetUniformLocation(prog, "uNormalMatrix");
-    GLint loc_ld  = glGetUniformLocation(prog, "uLightDir");
-    GLint loc_col = glGetUniformLocation(prog, "uColor");
-    GLint loc_ck  = glGetUniformLocation(prog, "uIsCheckerboard");
+    GLint loc_mvp  = glGetUniformLocation(prog, "uMVP");
+    GLint loc_m    = glGetUniformLocation(prog, "uModel");
+    GLint loc_nm   = glGetUniformLocation(prog, "uNormalMatrix");
+    GLint loc_ld   = glGetUniformLocation(prog, "uLightDir");
+    GLint loc_eye  = glGetUniformLocation(prog, "uEyePos");
+    GLint loc_col  = glGetUniformLocation(prog, "uColor");
+    GLint loc_mode = glGetUniformLocation(prog, "uShaderMode");
 
     std::vector<float> v_buf; std::vector<unsigned int> i_buf;
     build_plane(v_buf, i_buf);     Mesh plane    = upload(v_buf, i_buf);
@@ -265,22 +307,21 @@ int main(){
     grow_tree(tree_buf, glm::vec3(0, 0, 0), glm::vec3(0, 1, 0), 1.2f, 5, 3, 28.0f, 0.72f);
     Mesh tree = upload_lines(tree_buf);
 
-    double lastT = glfwGetTime();
     while(!glfwWindowShouldClose(win)){
-        double now = glfwGetTime();
-        float dt = static_cast<float>(now - lastT); lastT = now;
+        // Camera orientation: build a rotation matrix from yaw (world Y),
+        // pitch (local X), and roll (local Z) — applied in that order so
+        // roll tilts the already-yawed-and-pitched view, not the world.
+        // forward/up are that rotation applied to the default -Z/+Y axes;
+        // passing the *rotated* up (not world up) into lookAt is what makes
+        // roll visible, since lookAt's up vector defines the view's "top".
+        glm::mat4 R = glm::mat4(1.0f);
+        R = glm::rotate(R, glm::radians(g_yaw),   glm::vec3(0, 1, 0));
+        R = glm::rotate(R, glm::radians(g_pitch), glm::vec3(1, 0, 0));
+        R = glm::rotate(R, glm::radians(g_roll),  glm::vec3(0, 0, 1));
+        glm::vec3 fwd = glm::normalize(glm::vec3(R * glm::vec4(0, 0, -1, 0)));
+        glm::vec3 up  = glm::normalize(glm::vec3(R * glm::vec4(0, 1,  0, 0)));
 
-        glm::vec3 fwd(std::cos(g_pitch)*std::sin(g_yaw),
-                      std::sin(g_pitch),
-                      std::cos(g_pitch)*std::cos(g_yaw));
-        glm::vec3 right = glm::normalize(glm::cross(fwd, glm::vec3(0,1,0)));
-        float spd = 4.0f * dt;
-        if(glfwGetKey(win, GLFW_KEY_W) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_UP) == GLFW_PRESS)    g_pos += fwd * spd;
-        if(glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS)  g_pos -= fwd * spd;
-        if(glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS) g_pos += right * spd;
-        if(glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS)  g_pos -= right * spd;
-
-        glm::mat4 view = glm::lookAt(g_pos, g_pos + fwd, glm::vec3(0,1,0));
+        glm::mat4 view = glm::lookAt(g_pos, g_pos + fwd, up);
         glm::mat4 proj = glm::perspective(glm::radians(60.0f), static_cast<float>(fbw)/fbh, 0.1f, 100.0f);
 
         glClearColor(0.5f, 0.62f, 0.78f, 1.0f);   // sky-ish
@@ -288,21 +329,22 @@ int main(){
 
         glUseProgram(prog);
         glUniform3f(loc_ld, 0.4f, 0.85f, 0.5f);
+        glUniform3fv(loc_eye, 1, glm::value_ptr(g_pos));
 
-        auto draw = [&](const Mesh& m, const glm::mat4& model, const glm::vec3& color, int isCheckerboard) {
+        auto draw = [&](const Mesh& m, const glm::mat4& model, const glm::vec3& color, int shaderMode) {
             glm::mat3 nm = glm::transpose(glm::inverse(glm::mat3(model)));
             glm::mat4 mvp = proj * view * model;
             glUniformMatrix4fv(loc_mvp, 1, GL_FALSE, glm::value_ptr(mvp));
             glUniformMatrix4fv(loc_m, 1, GL_FALSE, glm::value_ptr(model));
             glUniformMatrix3fv(loc_nm, 1, GL_FALSE, glm::value_ptr(nm));
             glUniform3fv(loc_col, 1, glm::value_ptr(color));
-            glUniform1i(loc_ck, isCheckerboard);
+            glUniform1i(loc_mode, shaderMode);
             glBindVertexArray(m.vao);
             glDrawElements(GL_TRIANGLES, m.n, GL_UNSIGNED_INT, 0);
         };
 
-        // ground plane (checkerboard)
-        draw(plane,    glm::mat4(1.0f), glm::vec3(0.9f), 1);
+        // ground plane (checkerboard, mode 0)
+        draw(plane,    glm::mat4(1.0f), glm::vec3(0.9f), 0);
 
         // Composition: cylinder sits directly on the camera's initial straight-
         // ahead path (x=0); the sphere is staged nearer and to the left, the
@@ -311,19 +353,19 @@ int main(){
         // background well behind all three, giving the flythrough a sense of
         // depth instead of one row of objects.
 
-        // sphere — near, left
-        draw(sphere,   glm::translate(glm::mat4(1.0f), glm::vec3(-2.2f, 1.0f, 0.5f)), glm::vec3(0.88f, 0.72f, 0.36f), 0);
+        // sphere — near, left — mode 1: basic Fresnel-rim shader
+        draw(sphere,   glm::translate(glm::mat4(1.0f), glm::vec3(-2.2f, 1.0f, 0.5f)), glm::vec3(0.88f, 0.72f, 0.36f), 1);
 
-        // cylinder — centered on the camera's initial path
+        // cylinder — centered on the camera's initial path — mode 2: basic bump mapping
         glm::mat4 cylM = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.0f, -2.0f));
         cylM = glm::scale(cylM, glm::vec3(0.6f, 1.0f, 0.6f));
-        draw(cylinder, cylM, glm::vec3(0.40f, 0.78f, 0.55f), 0);
+        draw(cylinder, cylM, glm::vec3(0.40f, 0.78f, 0.55f), 2);
 
-        // cube — far, right, rotated for visual interest
+        // cube — far, right, rotated for visual interest — mode 3: basic panel pattern
         glm::mat4 cubeM = glm::translate(glm::mat4(1.0f), glm::vec3(2.6f, 0.9f, -3.5f));
         cubeM = glm::rotate(cubeM, glm::radians(25.0f), glm::vec3(0, 1, 0));
         cubeM = glm::scale(cubeM, glm::vec3(0.9f));
-        draw(cube,     cubeM, glm::vec3(0.40f, 0.55f, 0.85f), 0);
+        draw(cube,     cubeM, glm::vec3(0.40f, 0.55f, 0.85f), 3);
 
         // fractal tree — background prop, further back and slightly off-axis
         // so it doesn't block the cylinder from the camera's starting view
@@ -333,7 +375,7 @@ int main(){
         glm::mat3 treeNm = glm::transpose(glm::inverse(glm::mat3(treeM)));
         glUniformMatrix3fv(loc_nm, 1, GL_FALSE, glm::value_ptr(treeNm));
         glUniform3f(loc_col, 0.36f, 0.27f, 0.16f);
-        glUniform1i(loc_ck, 0);
+        glUniform1i(loc_mode, 0);
         glBindVertexArray(tree.vao);
         glLineWidth(1.5f);
         glDrawArrays(GL_LINES, 0, tree.n);

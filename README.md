@@ -1,21 +1,22 @@
 # Project 9 — Advanced Shaders 1: Scene Composition
 
 CST-310 · Project 9 (100 pts). Built from the `topic_09_checkerboard_scene`
-starter kit, extended per Topic 9 Activity 2: the four required primitives
-(checkerboard, sphere, cylinder, cube) composed deliberately, plus a fractal
-tree as the chosen optional background element, a fly-through camera, and
-this documentation.
+starter kit: the four required primitives (checkerboard, sphere, cylinder,
+cube) composed deliberately, each with a basic per-object shader, a fractal
+tree as an optional background element, a keyboard-driven camera matching the
+Project 9 Resource Guide exactly, and this documentation.
 
 ## What's here
 
-- `src/main.cpp` — the full scene: mesh generation for all four primitives,
-  the fractal-tree background prop, the fly-through camera, and the render
-  loop.
-- `shaders/scene.vert` / `scene.frag` — placeholder Lambert + ambient shading
-  (Project 10 replaces these with environment/parallax/bump mapping).
-- `docs/math.md` — derivations for every primitive's parameterization and the
-  camera, with parameters and normals explained.
-- `docs/Project9_navigation.mp4` — a 33-second navigation video (see below).
+- `src/main.cpp` — mesh generation for all four primitives, the fractal-tree
+  background prop, the keyboard camera, and the render loop.
+- `shaders/scene.vert` / `scene.frag` — one shared program with a per-object
+  shading mode: procedural checkerboard (ground), Fresnel rim (sphere),
+  procedural bump mapping (cylinder), procedural panel pattern (cube).
+- `docs/math.md` — derivations for every primitive's parameterization, every
+  shader's math, and the camera.
+- `docs/Project9_navigation.mp4` — a navigation video (see below).
+- `Readme.txt` — build/run instructions and requirements.
 
 ## Scene composition
 
@@ -24,44 +25,67 @@ rather than lined up in a row:
 
 - **Sphere** — near the camera's starting position, off to the left.
 - **Cylinder** — centered directly on the camera's initial straight-ahead
-  path (x = 0), so it's the first thing the fly-through approaches head-on.
+  path (x = 0), so it's the first thing the camera approaches head-on.
 - **Cube** — farther back and to the right, rotated 25° around its vertical
   axis so it reads as deliberately placed rather than dropped in
   axis-aligned.
-- **Fractal tree** (the chosen optional element) — anchored well behind the
-  three primitives and slightly off-axis, giving the scene a background
-  layer and a genuine sense of depth as the camera moves through it.
+- **Fractal tree** (optional element) — anchored well behind the three
+  primitives and slightly off-axis, giving the scene a background layer and
+  a genuine sense of depth.
 
 Positions were chosen so no two objects' bounding volumes overlap from any
-angle in the flythrough, while keeping the cylinder squarely in view from the
-camera's starting orientation.
+angle, while keeping the cylinder squarely in view from the camera's
+starting orientation.
+
+## Basic shaders (one per object)
+
+Each object gets a distinct, lightweight technique that Project 10 (Advanced
+Shaders 2) will replace with the full version of the same idea:
+
+| Object | Technique | Intended effect | Project 10 upgrades to |
+|---|---|---|---|
+| Sphere | Fresnel rim (Lambert + `pow(1-N·V, 3)` brightening at grazing angles) | Hints at reflectivity without a real reflection | Full environment/cube-map mapping |
+| Cylinder | Procedural bump mapping (analytic-derivative normal perturbation) | Visible ridge relief from a formula, no texture | Refined/authored bump or normal map |
+| Cube | Procedural panel pattern (UV-space seam grid) | Visible surface structure/paneling | True parallax (height-map UV displacement) mapping |
+| Ground | Procedural checkerboard | Reference grid for scale/navigation | Unchanged |
 
 ## Optional element: fractal tree background prop
 
-Per Activity 2 step 4, the fractal tree from `topic_09_fractal_tree` was
-ported in as a static background prop (`grow_tree()` in `main.cpp`) — the
-same recursive branching rule (fork into 3, tilt 28°, shrink by 0.72 per
-generation, depth 5), generated once at startup as a `GL_LINES` mesh rather
-than rebuilt every frame, since it's set dressing here rather than the
-interactive subject.
+The fractal tree from `topic_09_fractal_tree` was ported in as a static
+background prop (`grow_tree()` in `main.cpp`) — the same recursive branching
+rule (fork into 3, tilt 28°, shrink by 0.72 per generation, depth 5),
+generated once at startup as a `GL_LINES` mesh rather than rebuilt every
+frame, since it's set dressing here rather than the interactive subject.
 
 ## Controls
 
-| Input | Action |
+Matches the Project 9 Resource Guide's keyboard scheme exactly — every
+control is a discrete keyboard event, no mouse input:
+
+| Keystroke | Action |
 |---|---|
-| W A S D / arrows | move forward / strafe / back / strafe |
-| Left-drag | look around |
-| Esc | close |
+| Right Arrow | Slide camera 1 unit in the positive X direction |
+| Left Arrow | Slide camera 1 unit in the negative X direction |
+| Up Arrow | Slide camera 1 unit in the positive Y direction |
+| Down Arrow | Slide camera 1 unit in the negative Y direction |
+| Shift+Up Arrow | Slide camera 1 unit in the positive Z ("in") direction |
+| Shift+Down Arrow | Slide camera 1 unit in the negative Z ("out") direction |
+| Ctrl+Down Arrow | Change camera pitch by 2 degrees |
+| Ctrl+Up Arrow | Change camera pitch by -2 degrees |
+| Ctrl+Right Arrow | Change camera yaw by 2 degrees |
+| Ctrl+Left Arrow | Change camera yaw by -2 degrees |
+| `,` (`<`) | Change camera roll by 2 degrees |
+| `.` (`>`) | Change camera roll by -2 degrees |
+| `r` | Reset to the default position and orientation |
+| Esc | Close |
 
 ## Navigation video
 
-`docs/Project9_navigation.mp4` (33 seconds, exceeds the 30-second minimum)
-shows the camera moving through the scene and past every object — the
-sphere, the centered cylinder, the rotated cube, and the fractal tree — from
-multiple distinct angles and distances, ending on a wide shot with all four
-visible together.
+`docs/Project9_navigation.mp4` shows the camera navigating across the
+checkerboard past all three objects using these real keyboard controls, from
+multiple distinct angles and distances.
 
-Video link: https://github.com/ChrisLuciano2/CST310-Project9-AdvancedShaders1/blob/9f0aa0938f4ce6705814dcf81d582fef4c9adb80/docs/Project9_navigation.mp4
+Video link: https://github.com/ChrisLuciano2/CST310-Project9-AdvancedShaders1/blob/master/docs/Project9_navigation.mp4
 
 ## Build & run
 
