@@ -57,19 +57,27 @@ static float g_yaw = DEFAULT_YAW, g_pitch = DEFAULT_PITCH, g_roll = DEFAULT_ROLL
 
 static void build_plane(std::vector<float>& v, std::vector<unsigned int>& idx) {
     float size = 8.0f;
+    // Four corners of a flat, axis-aligned quad at Y=0; normal points
+    // straight up since the whole plane faces the same direction. UV runs
+    // 0..8 per edge (not 0..1) so the checker pattern computed in the
+    // fragment shader from floor(u)+floor(v) parity repeats 8x8 times
+    // instead of drawing as one giant tile.
     v = {
         -size, 0.0f, -size,   0,1,0,  0.0f, 0.0f,
          size, 0.0f, -size,   0,1,0,  8.0f, 0.0f,
          size, 0.0f,  size,   0,1,0,  8.0f, 8.0f,
         -size, 0.0f,  size,   0,1,0,  0.0f, 8.0f
     };
-    idx = { 0, 1, 2,  0, 2, 3 };
+    idx = { 0, 1, 2,  0, 2, 3 }; // two triangles covering the quad
 }
 
 static void build_sphere(std::vector<float>& v, std::vector<unsigned int>& idx,
                           int stacks, int slices) {
     v.clear(); idx.clear();
     const float PI = 3.14159265f;
+    // Outer loop walks the polar angle phi pole-to-pole (i=0 is the top
+    // pole, i=stacks is the bottom pole); inner loop sweeps the azimuthal
+    // angle theta once around the equator for each stack.
     for(int i = 0; i <= stacks; ++i){
         float phi = PI * float(i) / stacks;
         float sphi = std::sin(phi), cphi = std::cos(phi);
@@ -78,10 +86,15 @@ static void build_sphere(std::vector<float>& v, std::vector<unsigned int>& idx,
             float stheta = std::sin(theta), ctheta = std::cos(theta);
             float x = sphi * ctheta, y = cphi, z = sphi * stheta;
             v.push_back(x); v.push_back(y); v.push_back(z);
+            // Normal = position: for a unit sphere centered at the origin
+            // the outward normal is always parallel to the radius vector,
+            // so no separate cross-product/normal computation is needed.
             v.push_back(x); v.push_back(y); v.push_back(z);
             v.push_back(float(j)/slices); v.push_back(1.0f - float(i)/stacks);
         }
     }
+    // Stitch each (i,j) grid quad into two triangles using the four
+    // neighboring vertices generated above.
     int cols = slices + 1;
     for(int i = 0; i < stacks; ++i){
         for(int j = 0; j < slices; ++j){
@@ -116,9 +129,14 @@ static void build_cylinder(std::vector<float>& v, std::vector<unsigned int>& idx
 
 static void build_cube(std::vector<float>& v, std::vector<unsigned int>& idx) {
     v.clear(); idx.clear();
-    // 24 verts (4 per face) so each face can have its own normal and UV.
+    // 24 verts (4 per face), not 8 shared corners, so each face can carry
+    // its own constant normal and its own 0-1 UV square. A shared-corner
+    // cube would average adjacent faces' normals together at each corner,
+    // producing incorrect, smeared lighting on what should be flat faces.
     struct F { glm::vec3 n; glm::vec3 c[4]; };
     F faces[6] = {
+        // Each entry: outward face normal, then that face's four +/-1
+        // corners wound counter-clockwise as seen from outside the cube.
         { glm::vec3( 0, 0, 1), {glm::vec3(-1,-1,1), glm::vec3(1,-1,1), glm::vec3(1,1,1), glm::vec3(-1,1,1)} },
         { glm::vec3( 0, 0,-1), {glm::vec3(1,-1,-1), glm::vec3(-1,-1,-1), glm::vec3(-1,1,-1), glm::vec3(1,1,-1)} },
         { glm::vec3( 1, 0, 0), {glm::vec3(1,-1,1), glm::vec3(1,-1,-1), glm::vec3(1,1,-1), glm::vec3(1,1,1)} },
@@ -126,13 +144,15 @@ static void build_cube(std::vector<float>& v, std::vector<unsigned int>& idx) {
         { glm::vec3( 0, 1, 0), {glm::vec3(-1,1,1), glm::vec3(1,1,1), glm::vec3(1,1,-1), glm::vec3(-1,1,-1)} },
         { glm::vec3( 0,-1, 0), {glm::vec3(-1,-1,-1), glm::vec3(1,-1,-1), glm::vec3(1,-1,1), glm::vec3(-1,-1,1)} },
     };
-    float uv[8] = {0,0, 1,0, 1,1, 0,1};
+    float uv[8] = {0,0, 1,0, 1,1, 0,1}; // same 0-1 square reused on every face
     for(int f = 0; f < 6; ++f) {
         for(int i = 0; i < 4; ++i) {
             v.push_back(faces[f].c[i].x); v.push_back(faces[f].c[i].y); v.push_back(faces[f].c[i].z);
             v.push_back(faces[f].n.x);    v.push_back(faces[f].n.y);    v.push_back(faces[f].n.z);
             v.push_back(uv[i*2]); v.push_back(uv[i*2 + 1]);
         }
+        // Two triangles per face, indexed relative to this face's own
+        // 4-vertex block (b = first vertex of face f).
         unsigned int b = f * 4;
         idx.push_back(b); idx.push_back(b+1); idx.push_back(b+2);
         idx.push_back(b); idx.push_back(b+2); idx.push_back(b+3);
